@@ -83,7 +83,7 @@ h2{margin:0;font-size:20px;font-weight:900}
 .tabs{display:flex;flex-wrap:wrap;gap:6px}
 .tabs button{min-height:44px;min-width:56px;padding:0 16px;border-radius:999px;font:inherit;font-size:14px;font-weight:700;cursor:pointer;border:1px solid #CFCAC0;background:#fff;color:#1C1B19}
 .tabs button[aria-pressed=true]{background:#1C1B19;color:#fff;border-color:#1C1B19}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;align-items:start}
 .card{position:relative;isolation:isolate;overflow:hidden;background:#fff;border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:8px}
 .card .art{position:absolute;z-index:-1;right:-18px;top:30px;width:136px;height:136px;opacity:.2;pointer-events:none}
 .tag{align-self:flex-start;font-size:12px;font-weight:500;color:#2F4A28;background:#EEF4EC;border-radius:6px;padding:2px 8px}
@@ -105,6 +105,20 @@ h2{margin:0;font-size:20px;font-weight:900}
 .aitem:first-child{border-top:0;padding-top:0}
 .kind{display:inline-block;font-size:11px;font-weight:700;border-radius:6px;padding:1px 6px;margin-right:6px;background:#FFE9C2;color:#7A4A00}
 details summary{cursor:pointer;font-weight:700;font-size:14px;color:#2F6B3A;padding:8px 0;min-height:24px}
+.warn{font-size:11px;font-weight:700;color:#7A4A00;background:#FFE9C2;border-radius:6px;padding:2px 6px;white-space:nowrap}
+details.more{border-top:1px solid #ECE9E1;margin-top:2px}
+details.more>summary{list-style:none;cursor:pointer;min-height:40px;display:flex;align-items:center;justify-content:space-between;font-size:13px;font-weight:700;color:#2F6B3A}
+details.more>summary::-webkit-details-marker,details.sec>summary::-webkit-details-marker,details.note>summary::-webkit-details-marker{display:none}
+details.more>summary::after{content:"펼치기 ▾";font-weight:500;color:#55524B}
+details.more[open]>summary::after{content:"접기 ▴"}
+.morebody{display:flex;flex-direction:column;gap:8px;padding-bottom:4px}
+details.sec>summary{list-style:none;cursor:pointer;display:flex;justify-content:space-between;align-items:center;min-height:32px}
+details.sec>summary::after{content:"접기 ▴";font-size:13px;color:#55524B;font-weight:500}
+details.sec:not([open])>summary::after{content:"펼치기 ▾"}
+details.note>summary{list-style:none;cursor:pointer;font-weight:700;min-height:24px}
+details.note>summary::after{content:" ▾";color:#55524B}
+.card.off{opacity:.7;padding:12px 16px;gap:2px}
+.ghost{min-height:40px;padding:0 14px;border-radius:999px;border:1px solid #CFCAC0;background:#fff;font:inherit;font-size:13px;font-weight:700;cursor:pointer}
 footer{font-size:13px;line-height:1.7;color:#55524B;padding:8px 4px}
 @media (max-width:480px){h1{font-size:26px}.kpi b{font-size:26px}}
 """
@@ -122,10 +136,10 @@ def report_html(r):
             f'<div style="font-size:15px;font-weight:700;text-align:right;color:{chg_color(c["chg"])}">{chg_text(c["chg"])}</div></div>')
 
     ranked = r["ranked"]
-    if len(ranked) > 20:
-        head = ranked[:10]
-        tail = ranked[-10:]
-        mid = ranked[10:-10]
+    if len(ranked) > 12:
+        head = ranked[:5]
+        tail = ranked[-5:]
+        mid = ranked[5:-5]
         rank_html = ("".join(map(rank_row, head)) + '<div class="muted" style="text-align:center;font-size:13px">⋯</div>'
                      + "".join(map(rank_row, tail))
                      + f'<details><summary>가운데 {len(mid)}개 품목도 보기</summary>{"".join(map(rank_row, mid))}</details>')
@@ -142,8 +156,8 @@ def report_html(r):
     for c in r["cards"]:
         art = f'<img class="art" src="art/{e(c["art"])}.svg" alt="" aria-hidden="true">'
         if c["missing"]:
-            cards.append(f'<article class="card" data-cat="{e(c["cat"])}">{art}<div style="font-size:17px;font-weight:900">{e(c["name"])}</div>'
-                         f'<div class="muted" style="font-size:14px">이날은 거래 기록이 없어요. 제철이 아니거나 휴장이에요.</div></article>')
+            cards.append(f'<article class="card off" data-cat="{e(c["cat"])}"><div style="font-size:15px;font-weight:700">{e(c["name"])}</div>'
+                         f'<div class="muted" style="font-size:13px">거래 없음 · 제철이 아니에요</div></article>')
             continue
         top = max(l["price"] for l in c["ladder"]) or 1
         ladder = "".join(
@@ -156,15 +170,17 @@ def report_html(r):
         if c["hi"] and c["lo"]:
             hl = (f'<div style="display:flex;flex-direction:column;font-size:12px" class="muted">'
                   f'<span>최고 {e(c["hi"][0])} {won(c["hi"][1])}</span><span>최저 {e(c["lo"][0])} {won(c["lo"][1])}</span></div>')
+        badge = '<span class="warn">⚠ 이상거래</span>' if c.get("notes") else ""
         cards.append(
             f'<article class="card" data-cat="{e(c["cat"])}">{art}'
-            f'<div style="display:flex;justify-content:space-between;align-items:baseline"><div style="font-size:17px;font-weight:900">{e(c["name"])}</div>'
-            f'<div class="muted" style="font-size:12px">{e(c["cat"])}</div></div>'
+            f'<div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px"><div style="font-size:17px;font-weight:900">{e(c["name"])}</div>'
+            f'{badge}</div>'
             f'<div class="tag">기준 {e(spec(c))}</div>'
             f'<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><div class="price">{won(c["price"])}</div>'
             f'<div class="chip" style="background:{chip_bg};color:{chg_color(c["chg"])}">{chg_text(c["chg"])}</div></div>'
             f'<div class="muted" style="font-size:13px;margin-top:-4px">kg당 {won(c["per_kg"])} · 거래 {c["volume_t"]:.1f}톤</div>'
-            f'{spark_svg(c)}<div class="ladder"><div style="font-size:13px;font-weight:700">등급별 가격</div>{ladder}</div>{alert_html(c)}{hl}</article>')
+            f'<details class="more"><summary>{"흐름·등급·이상거래 분석" if c.get("notes") else "흐름·등급별 가격"}</summary>'
+            f'<div class="morebody">{spark_svg(c)}<div class="ladder"><div style="font-size:13px;font-weight:700">등급별 가격</div>{ladder}</div>{alert_html(c)}{hl}</div></details></article>')
 
     feat = ""
     f = r["featured"]
@@ -178,8 +194,8 @@ def report_html(r):
             a, b = f["markets"][0], f["markets"][-1]
             gap = (f'<div style="font-size:14px;background:#EEF4EC;border-radius:12px;padding:12px 14px;margin-top:6px">'
                    f'{e(josa(a[0], "이", "가"))} {e(b[0])}보다 {f["unit_kg"]:g}kg당 <b>{won(a[1] - b[1])}</b> 높아요.</div>')
-        feat = (f'<section class="box"><h2>시장별로 비교하면 · {e(f["name"])} {e(spec(f))}</h2>'
-                f'<div class="muted" style="font-size:14px;margin-bottom:6px">거래량이 많은 시장만 골랐어요. 출하할 시장을 고를 때 보세요.</div>{rows}{gap}</section>')
+        feat = (f'<details class="box sec" open><summary><h2>시장별로 비교하면 · {e(f["name"])} {e(spec(f))}</h2></summary>'
+                f'<div class="muted" style="font-size:14px;margin-bottom:6px">거래량이 많은 시장만 골랐어요. 출하할 시장을 고를 때 보세요.</div>{rows}{gap}</details>')
 
     alerts = ""
     if r.get("flagged"):
@@ -210,20 +226,22 @@ def report_html(r):
 <div class="kpi"><span class="muted" style="font-size:14px">내린 품목</span><b style="color:{DOWN}">{r['down_count']}개</b></div>
 <div class="kpi"><span class="muted" style="font-size:14px">평균 등락</span><b style="color:{avg_col}">{chg_text(r['avg'], False)}</b></div>
 </section>
-<section class="note"><b>등락은 품목마다 정한 기준 등급 하나로만 계산해요.</b><br>
+<details class="note"><summary>이 보고서 보는 법</summary>
+<div style="padding-top:8px"><b>등락은 품목마다 정한 기준 등급 하나로만 계산해요.</b><br>
 여러 등급을 섞어 평균을 내면, 그날 좋은 등급이 많이 나왔을 뿐인데 값이 오른 것처럼 보이기 때문이에요.
-가격은 포장 단위가 달라도 비교할 수 있게 kg당 가격으로 바꾼 뒤 기준 단위로 환산했어요.</section>
-<section class="box"><h2>등락률 순위</h2>
+가격은 포장 단위가 달라도 비교할 수 있게 kg당 가격으로 바꾼 뒤 기준 단위로 환산했어요.
+카드의 ⚠ 표시는 등급 값이 거꾸로 됐거나 하루 25% 넘게 움직인 품목이에요. 카드를 펼치면 이유가 나와요.</div></details>
+<details class="box sec" open><summary><h2>등락률 순위</h2></summary>
 <div class="muted" style="font-size:14px;margin-bottom:10px">가운데 선 오른쪽은 오름, 왼쪽은 내림이에요.</div>
 {rank_html or '<div class="muted">전일 데이터가 쌓이면 표시돼요.</div>'}
-</section>
-{alerts}
+</details>
 <section style="display:flex;flex-direction:column;gap:12px">
 <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;padding:8px 4px 0">
 <h2>품목별 시세와 흐름</h2>
 <div class="tabs" role="group" aria-label="품목 분류">
 {tab_btns}
 </div></div>
+<div style="display:flex;justify-content:flex-end;padding:0 4px"><button type="button" id="toggleAll" class="ghost">모두 펼치기</button></div>
 <div class="grid">{''.join(cards)}</div>
 </section>
 {feat}
@@ -234,6 +252,9 @@ def report_html(r):
 document.querySelectorAll('.tabs button').forEach(function(b){{b.addEventListener('click',function(){{
 var f=b.dataset.f;document.querySelectorAll('.tabs button').forEach(function(x){{x.setAttribute('aria-pressed',x===b?'true':'false')}});
 document.querySelectorAll('.card').forEach(function(c){{c.style.display=(f==='전체'||c.dataset.cat===f)?'':'none'}});}})}});
+var tg=document.getElementById('toggleAll');tg.addEventListener('click',function(){{
+var open=tg.textContent==='모두 펼치기';document.querySelectorAll('.card details.more').forEach(function(d){{d.open=open}});
+tg.textContent=open?'모두 접기':'모두 펼치기';}});
 </script></body></html>"""
 
 

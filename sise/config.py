@@ -31,6 +31,8 @@ ITEMS = [
     {"name": "열무", "cat": "채소", "mid": "열무", "unit_kg": None, "grade": None, "art": "radish"},
     {"name": "오이", "cat": "채소", "mid": "오이", "unit_kg": 10, "grade": None, "art": "cucumber"},
     {"name": "애호박", "cat": "채소", "mid": "호박", "small": "애호박", "unit_kg": 8, "grade": None, "art": "zucchini"},
+    {"name": "단호박", "cat": "채소", "mid": "호박", "small": "단호박", "unit_kg": None, "grade": None, "art": "zucchini"},
+    {"name": "옥수수", "cat": "채소", "mid": "옥수수", "unit_kg": None, "grade": None, "art": "corn"},
     {"name": "가지", "cat": "채소", "mid": "가지", "exclude": ["건가지"], "unit_kg": None, "grade": None, "art": "eggplant"},
     {"name": "청양고추", "cat": "채소", "mid": "풋고추", "small": "청양", "unit_kg": 10, "grade": None, "art": "pepper"},
     {"name": "꽈리고추", "cat": "채소", "mid": "꽈리고추", "unit_kg": None, "grade": None, "art": "pepper"},
@@ -50,6 +52,15 @@ ITEMS = [
     {"name": "쑥갓", "cat": "채소", "mid": "쑥갓", "unit_kg": None, "grade": None, "art": "leaf"},
     {"name": "근대", "cat": "채소", "mid": "근대", "unit_kg": None, "grade": None, "art": "spinach"},
     {"name": "치커리", "cat": "채소", "mid": "치커리", "unit_kg": None, "grade": None, "art": "lettuce"},
+    # 나물 (봄나물은 철이 아니면 '거래 없음'으로 보이다가 출하가 시작되면 채워져요)
+    {"name": "취나물", "cat": "나물", "mid": "취나물", "unit_kg": None, "grade": None, "art": "sprout"},
+    {"name": "참나물", "cat": "나물", "mid": "참나물", "unit_kg": None, "grade": None, "art": "sprout"},
+    {"name": "두릅", "cat": "나물", "mid": "두릅", "unit_kg": None, "grade": None, "art": "sprout"},
+    {"name": "냉이", "cat": "나물", "mid": "냉이", "unit_kg": None, "grade": None, "art": "leaf"},
+    {"name": "달래", "cat": "나물", "mid": "달래", "unit_kg": None, "grade": None, "art": "chive"},
+    {"name": "쑥", "cat": "나물", "mid": "쑥", "unit_kg": None, "grade": None, "art": "leaf"},
+    {"name": "머위", "cat": "나물", "mid": "머위", "unit_kg": None, "grade": None, "art": "leaf"},
+    {"name": "고들빼기", "cat": "나물", "mid": "고들빼기", "unit_kg": None, "grade": None, "art": "leaf"},
     # 버섯
     {"name": "표고버섯", "cat": "버섯", "mid": "표고버섯", "small": "일반", "unit_kg": None, "grade": None, "art": "shiitake"},
     {"name": "새송이버섯", "cat": "버섯", "mid": "새송이버섯", "unit_kg": None, "grade": None, "art": "kingoyster"},
@@ -68,6 +79,10 @@ ITEMS = [
     {"name": "방울토마토", "cat": "과일", "mid": "방울토마토", "unit_kg": None, "grade": None, "art": "cherrytomato"},
     {"name": "포도", "cat": "과일", "mid": "포도", "unit_kg": None, "grade": None, "art": "grape"},
     {"name": "키위", "cat": "과일", "mid": "참다래(키위)", "unit_kg": None, "grade": None, "art": "kiwi"},
+    {"name": "참외", "cat": "과일", "mid": "참외", "unit_kg": None, "grade": None, "art": "melon"},
+    {"name": "복숭아", "cat": "과일", "mid": "복숭아", "unit_kg": None, "grade": None, "art": "peach"},
+    {"name": "자두", "cat": "과일", "mid": "자두", "unit_kg": None, "grade": None, "art": "plum"},
+    {"name": "블루베리", "cat": "과일", "mid": "블루베리", "unit_kg": None, "grade": None, "art": "blueberry"},
     {"name": "수박", "cat": "과일", "mid": "수박", "unit_kg": None, "grade": None, "art": "watermelon"},
     {"name": "멜론", "cat": "과일", "mid": "멜론", "unit_kg": None, "grade": None, "art": "melon"},
     # 특작 (춘희네 품목)
@@ -88,7 +103,7 @@ GRADE_ORDER = ["특", "특품", "상", "상품", "보통", "중", "중품", "하
 NO_GRADE = "등급 미표기"
 
 # 보고서에 쓰는 품목 분류(탭) 순서
-CATS = ["채소", "버섯", "과일", "특작"]
+CATS = ["채소", "나물", "버섯", "과일", "특작"]
 
 # 몇 시까지 기다렸다가, 정산이 덜 끝났어도 그대로 보낼지 (한국 시간, 시)
 SEND_DEADLINE_HOUR = 11

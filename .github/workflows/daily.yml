@@ -1,9 +1,22 @@
 name: 매일 시세 보고서
 
+# 도매시장 정산 자료는 정해진 발표 시각 없이 시장마다 정산이 끝나는 대로 실시간으로 올라와요.
+# 그래서 아침 5시부터 30분마다 '어제 정산이 다 들어왔는지' 확인하고, 다 들어온 첫 순간에 한 번만 보냅니다.
+# 11시까지 다 들어오지 않으면 그때까지 들어온 것으로 보냅니다. (GitHub 사정으로 몇 분~수십 분 늦을 수 있어요)
 on:
   schedule:
-    - cron: "40 20 * * *"   # 매일 오전 5시 40분 (한국 시간). GitHub 사정으로 10~30분 늦어질 수 있어요
-  workflow_dispatch:        # Actions 화면에서 'Run workflow' 로 바로 실행
+    - cron: "*/30 20-23 * * *"   # 한국 시간 05:00 ~ 08:30
+    - cron: "*/30 0-2 * * *"     # 한국 시간 09:00 ~ 11:30
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "이미 보낸 날이어도 다시 보내기"
+        type: boolean
+        default: false
+      date:
+        description: "특정 날짜로 만들기 (예: 2026-11-26, 비워 두면 어제)"
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -20,33 +33,51 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: 준비
-        run: |
-          pip install -r requirements.txt
-          python -m playwright install --with-deps chromium
+      - name: 기본 준비
+        run: pip install -r requirements.txt
 
-      - name: 시세 받아서 보고서 만들기
+      - name: 어제 정산이 다 들어왔는지 확인
+        id: check
         env:
           DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
-        run: python -m sise.run build
+          FORCE: ${{ inputs.force && '--force' || '' }}
+          DAY: ${{ inputs.date }}
+        run: python -m sise.run check $FORCE ${DAY:+--date "$DAY"}
+
+      - name: 카드 그리기 준비
+        if: steps.check.outputs.go == 'true'
+        run: python -m playwright install --with-deps chromium
+
+      - name: 보고서 만들기
+        if: steps.check.outputs.go == 'true'
+        env:
+          DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
+        run: python -m sise.run build --date ${{ steps.check.outputs.day }}
 
       - name: 보고서 올리기 (GitHub Pages)
+        if: steps.check.outputs.go == 'true'
         run: |
           git config user.name "sise-bot"
           git config user.email "sise-bot@users.noreply.github.com"
           git add docs data
-          git commit -m "시세 보고서 $(TZ=Asia/Seoul date +%F)" || echo "바뀐 내용 없음"
+          git commit -m "시세 보고서 ${{ steps.check.outputs.day }}" || echo "바뀐 내용 없음"
           git push
 
       - name: 카톡 보내기
+        if: steps.check.outputs.go == 'true'
         env:
           KAKAO_REST_KEY: ${{ secrets.KAKAO_REST_KEY }}
           KAKAO_CLIENT_SECRET: ${{ secrets.KAKAO_CLIENT_SECRET }}
           KAKAO_REFRESH_TOKEN: ${{ secrets.KAKAO_REFRESH_TOKEN }}
-        run: python -m sise.run send
+        run: |
+          python -m sise.run send
+          python -m sise.run sent ${{ steps.check.outputs.day }}
+          git add data/sent.json
+          git commit -m "보냄 ${{ steps.check.outputs.day }}"
+          git push
 
       - name: 카카오 토큰 갱신 저장
-        if: always()
+        if: always() && steps.check.outputs.go == 'true'
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |

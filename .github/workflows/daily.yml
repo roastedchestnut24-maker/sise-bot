@@ -44,6 +44,14 @@ jobs:
           DAY: ${{ inputs.date }}
         run: python -m sise.run check $FORCE ${DAY:+--date "$DAY"}
 
+      - name: 받아 둔 기록 저장 (아직 안 보낼 때)
+        if: steps.check.outputs.go != 'true'
+        run: |
+          git config user.name "sise-bot"
+          git config user.email "sise-bot@users.noreply.github.com"
+          git add data/history data/timing.csv 2>/dev/null || true
+          git diff --cached --quiet || (git commit -m "정산 확인 기록" && git push)
+
       - name: 카드 그리기 준비
         if: steps.check.outputs.go == 'true'
         run: python -m playwright install --with-deps chromium

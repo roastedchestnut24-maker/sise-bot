@@ -1,0 +1,31 @@
+name: 카카오 연결 (처음 한 번)
+
+on:
+  workflow_dispatch:
+    inputs:
+      code:
+        description: "카카오 로그인 후 주소창에 나온 code= 뒤의 값"
+        required: true
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: 토큰 받기
+        env:
+          KAKAO_REST_KEY: ${{ secrets.KAKAO_REST_KEY }}
+          KAKAO_CLIENT_SECRET: ${{ secrets.KAKAO_CLIENT_SECRET }}
+          CODE: ${{ inputs.code }}
+        run: python -m sise.run exchange "$CODE"
+      - name: 토큰 저장
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          gh secret set KAKAO_REFRESH_TOKEN < .new_refresh_token
+          rm -f .new_refresh_token
+          echo "카카오 연결 완료. 이제 '매일 시세 보고서'를 실행해 보세요."

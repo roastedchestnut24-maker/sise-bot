@@ -1,0 +1,57 @@
+name: 매일 시세 보고서
+
+on:
+  schedule:
+    - cron: "40 20 * * *"   # 매일 오전 5시 40분 (한국 시간). GitHub 사정으로 10~30분 늦어질 수 있어요
+  workflow_dispatch:        # Actions 화면에서 'Run workflow' 로 바로 실행
+
+permissions:
+  contents: write
+
+concurrency: daily-report
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 준비
+        run: |
+          pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: 시세 받아서 보고서 만들기
+        env:
+          DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
+        run: python -m sise.run build
+
+      - name: 보고서 올리기 (GitHub Pages)
+        run: |
+          git config user.name "sise-bot"
+          git config user.email "sise-bot@users.noreply.github.com"
+          git add docs data
+          git commit -m "시세 보고서 $(TZ=Asia/Seoul date +%F)" || echo "바뀐 내용 없음"
+          git push
+
+      - name: 카톡 보내기
+        env:
+          KAKAO_REST_KEY: ${{ secrets.KAKAO_REST_KEY }}
+          KAKAO_CLIENT_SECRET: ${{ secrets.KAKAO_CLIENT_SECRET }}
+          KAKAO_REFRESH_TOKEN: ${{ secrets.KAKAO_REFRESH_TOKEN }}
+        run: python -m sise.run send
+
+      - name: 카카오 토큰 갱신 저장
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          if [ -f .new_refresh_token ]; then
+            gh secret set KAKAO_REFRESH_TOKEN < .new_refresh_token
+            rm -f .new_refresh_token
+            echo "카카오 토큰을 새로 저장했어요."
+          fi

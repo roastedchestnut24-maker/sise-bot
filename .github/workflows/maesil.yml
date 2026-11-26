@@ -1,0 +1,62 @@
+name: 매실 원자료 모으기
+
+on:
+  workflow_dispatch:
+    inputs:
+      months:
+        description: "모을 달 (쉼표로 구분)"
+        type: string
+        default: "2026-05,2026-06,2026-07"
+
+permissions:
+  contents: write
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      months: ${{ steps.m.outputs.list }}
+    steps:
+      - id: m
+        run: echo "list=$(echo '${{ inputs.months }}' | python3 -c 'import sys,json;print(json.dumps([x.strip() for x in sys.stdin.read().split(",") if x.strip()]))')" >> "$GITHUB_OUTPUT"
+
+  fetch:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        month: ${{ fromJson(needs.plan.outputs.months) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: 원자료 받기
+        env:
+          DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
+        run: python -m sise.maesil ${{ matrix.month }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: maesil-${{ matrix.month }}
+          path: data/maesil/
+
+  save:
+    needs: fetch
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: data/maesil
+          merge-multiple: true
+      - name: 저장
+        run: |
+          git config user.name "sise-bot"
+          git config user.email "sise-bot@users.noreply.github.com"
+          git add data/maesil
+          git commit -m "매실 원자료" || echo "바뀐 내용 없음"
+          git pull --rebase && git push

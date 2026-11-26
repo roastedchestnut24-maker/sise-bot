@@ -15,7 +15,7 @@ from .config import ITEMS, GRADE_ORDER, FEATURED, NO_GRADE, CATS
 
 # 품목 목록이 바뀌면 저장해 둔 요약을 다시 받도록 표시하는 값
 SIG = hashlib.md5(json.dumps([[i["name"], i["mid"], i.get("small"), i.get("exclude")] for i in ITEMS],
-                             ensure_ascii=False).encode()).hexdigest()[:10] + "-v2"
+                             ensure_ascii=False).encode()).hexdigest()[:10] + "-v3"
 
 
 def _num(v):
@@ -52,21 +52,37 @@ def catalog(rows):
 
 
 def _new():
-    return {"won": 0.0, "kg": 0.0, "n": 0, "pack": defaultdict(float)}
+    return {"won": 0.0, "kg": 0.0, "n": 0, "pack": defaultdict(float), "var": defaultdict(float), "size": defaultdict(float)}
 
 
-def _add(a, won, kg, pack):
+def _add(a, won, kg, pack, var=None, size=None):
     a["won"] += won
     a["kg"] += kg
     a["n"] += 1
     if pack > 0:
         a["pack"][f"{pack:g}"] += kg
+    if var:
+        a["var"][var] += kg
+    if size:
+        a["size"][size] += kg
 
 
-def _fin(a):
+def _top(d, total):
+    if not d:
+        return None
+    k, v = max(d.items(), key=lambda kv: kv[1])
+    return [k, round(v / total, 3)]
+
+
+def _fin(a, detail=False):
     out = {"per_kg": a["won"] / a["kg"], "kg": a["kg"], "n": a["n"]}
     if a["pack"]:
         out["pack"] = float(max(a["pack"].items(), key=lambda kv: kv[1])[0])
+    if detail:
+        if a["var"]:
+            out["var"] = _top(a["var"], a["kg"])
+        if a["size"]:
+            out["size"] = _top(a["size"], a["kg"])
     return out
 
 
@@ -83,12 +99,16 @@ def summarize(rows):
             continue
         pack = _num(r.get("unit_qty"))
         grade = grade_name(r.get("grd_nm"))
+        var = (r.get("gds_sclsf_nm") or "").strip()
+        size = (r.get("sz_nm") or "").strip()
+        if not re.search(r"[0-9A-Za-z가-힣]", size) or size in ("기타", "없음", "무"):
+            size = ""
         market = (r.get("whsl_mrkt_nm") or "?").replace("도매시장", "").replace("농수산물", "").replace("공판장", "").strip() or "?"
         markets.add(market)
         for item in ITEMS:
             if _match(item, r):
                 a = acc[item["name"]]
-                _add(a["g"][grade], won, kg, pack)
+                _add(a["g"][grade], won, kg, pack, var, size)
                 _add(a["m"][grade][market], won, kg, pack)
                 _add(a["all"], won, kg, pack)
                 break
@@ -99,7 +119,7 @@ def summarize(rows):
             continue
         out[name] = {
             "pack": _fin(a["all"]).get("pack"),
-            "grades": {g: _fin(v) for g, v in a["g"].items() if v["kg"] > 0},
+            "grades": {g: _fin(v, detail=True) for g, v in a["g"].items() if v["kg"] > 0},
             "markets": {g: {m: _fin(v) for m, v in mk.items() if v["kg"] > 0} for g, mk in a["m"].items()},
         }
     return out
@@ -153,6 +173,14 @@ def _inversion_note(name, hi_g, lo_g, s, unit):
     if share < 0.03 or lo["n"] <= 3:
         reasons.append(f"{lo_g} 등급은 거래가 {lo['n']}건·{_t(lo['kg'])}(전체의 {_pct(share)})뿐이라 몇 건의 값이 평균을 좌우했어요")
 
+    hv, lv = hi.get("var"), lo.get("var")
+    if hv and lv and hv[0] != lv[0] and lv[1] >= 0.4:
+        reasons.append(f"{lo_g} 등급은 {lv[0]} 품종이 {_pct(lv[1])}이고, {josa(hi_g, '은', '는')} {hv[0]} 품종이 {_pct(hv[1])}예요. "
+                       f"품종이 달라 값 차이가 생겼어요")
+    hz, lz = hi.get("size"), lo.get("size")
+    if hz and lz and hz[0] != lz[0] and lz[1] >= 0.4:
+        reasons.append(f"{lo_g} 등급은 주로 '{lz[0]}' 크기({_pct(lz[1])}), {josa(hi_g, '은', '는')} 주로 '{hz[0]}' 크기({_pct(hz[1])})로 거래됐어요. "
+                       f"크기가 달라 등급보다 크기 값이 더 크게 반영됐을 수 있어요")
     if hi.get("pack") and lo.get("pack") and lo["pack"] < hi["pack"] * 0.6:
         reasons.append(f"{lo_g} 등급은 주로 {lo['pack']:g}kg 소포장으로 거래됐어요. 작은 포장은 kg당 값이 높게 나와요"
                        f"({josa(hi_g, '은', '는')} 주로 {hi['pack']:g}kg)")
@@ -165,10 +193,13 @@ def _inversion_note(name, hi_g, lo_g, s, unit):
         if same_hi >= same_lo:
             top_m, top_v = max(M[lo_g].items(), key=lambda kv: kv[1]["kg"])
             mshare = top_v["kg"] / (lo["kg"] or 1)
-            reasons.append(f"{lo_g} 등급은 {top_m} 거래가 {_pct(mshare)}를 차지해 시장 구성이 달라요. "
-                           f"같은 시장끼리 비교하면 {josa(hi_g, '이', '가')} {lo_g}보다 {_pct(same_hi / same_lo - 1)} 비싸요")
+            diff = same_hi / same_lo - 1
+            tail = (f"같은 시장끼리 비교하면 {josa(hi_g, '이', '가')} {lo_g}보다 {_pct(diff)} 비싸요" if diff >= 0.03
+                    else "같은 시장끼리 비교하면 두 등급 값이 거의 같아요")
+            reasons.append(f"{lo_g} 등급은 {top_m} 거래가 {_pct(mshare)}로 몰려 있어 시장 구성이 달라요. {tail}")
         elif not reasons:
-            reasons.append("같은 시장 안에서도 아래 등급이 더 비싸요. 품종·크기 차이이거나 시장마다 등급 기준이 달라서일 수 있어요")
+            reasons.append("같은 시장 안에서도 아래 등급이 더 비싸요. 품종·크기·포장은 비슷해서, 시장(법인)마다 등급을 매기는 기준이 "
+                           "달랐거나 그날 특정 산지 물건이 좋게 평가된 것으로 보여요")
     elif not reasons:
         reasons.append(f"{josa(hi_g, '과', '와')} {josa(lo_g, '이', '가')} 서로 다른 시장에서만 거래돼 직접 비교가 어려워요")
 
@@ -216,15 +247,16 @@ def _jump_note(item, base, s, prev_s, chg, unit):
 def _market_note(base, mk, unit):
     tot = sum(v["kg"] for v in mk.values()) or 1
     main = {m: v for m, v in mk.items() if v["kg"] / tot >= 0.03}
+    big = {m: v for m, v in main.items() if v["kg"] / tot >= 0.10}
     if len(main) < 3:
         return None
     med = median(v["per_kg"] for v in main.values())
-    odd = [(m, v["per_kg"] / med, v) for m, v in main.items() if v["per_kg"] / med >= 1.8 or v["per_kg"] / med <= 0.55]
+    odd = [(m, v["per_kg"] / med, v) for m, v in big.items() if v["per_kg"] / med >= 2 or v["per_kg"] / med <= 0.5]
     if not odd:
         return None
     m, ratio, v = max(odd, key=lambda x: abs(x[1] - 1))
-    side = f"{ratio:.1f}배" if ratio > 1 else f"{_pct(ratio)} 수준"
-    why = [f"{m} {_t(v['kg'])}·{v['n']}건이 kg당 {v['per_kg']:,.0f}원으로 다른 시장 가운데값({med:,.0f}원)의 {side}이에요"]
+    side = f"{ratio:.1f}배예요" if ratio > 1 else f"{_pct(ratio)} 수준이에요"
+    why = [f"{m} {_t(v['kg'])}·{v['n']}건이 kg당 {v['per_kg']:,.0f}원으로, 다른 시장 가운데값({med:,.0f}원)의 {side}"]
     if v["n"] <= 3:
         why.append("거래가 몇 건뿐이라 특수품(선별품·소포장)이 섞였을 가능성이 커요")
     return {"kind": "시장", "grades": [base], "title": f"{m} 값이 다른 시장과 크게 달라요", "why": why}
@@ -234,18 +266,18 @@ def anomalies(item, base, s, prev_s, chg, unit):
     notes = []
     G = s["grades"]
     total = sum(v["kg"] for v in G.values()) or 1
-    ranked = sorted([g for g in G if _ranked(g) and G[g]["kg"] / total >= 0.005], key=_grade_rank)
-    # 같은 계열(특>상>중>하)에서 위 등급보다 비싼 아래 등급
+    # 물량이 전체의 5% 이상인 등급끼리만 비교합니다 (몇 건짜리 등급은 원래 들쭉날쭉해서 보고서에서도 숨김)
+    ranked = sorted([g for g in G if _ranked(g) and G[g]["kg"] / total >= 0.05], key=_grade_rank)
     for i, lo_g in enumerate(ranked):
         for hi_g in ranked[:i]:
-            if G[lo_g]["per_kg"] > G[hi_g]["per_kg"] * 1.05:
+            if G[lo_g]["per_kg"] > G[hi_g]["per_kg"] * 1.12:
                 notes.append(_inversion_note(item["name"], hi_g, lo_g, s, unit))
                 break
-    if NO_GRADE in G and G[NO_GRADE]["kg"] / total >= 0.03:
+    if NO_GRADE in G and G[NO_GRADE]["kg"] / total >= 0.3:
         notes.append({"kind": "미표기", "grades": [NO_GRADE],
                       "title": f"등급 없이 거래된 물량이 {_pct(G[NO_GRADE]['kg'] / total)}예요",
                       "why": ["시장이 등급을 적지 않은 거래예요. 등급별 비교에서는 빼고 봤어요"]})
-    if chg is not None and abs(chg) >= 20 and prev_s and base in prev_s.get("grades", {}):
+    if chg is not None and abs(chg) >= 25 and prev_s and base in prev_s.get("grades", {}):
         notes.append(_jump_note(item, base, s, prev_s, chg, unit))
     mn = _market_note(base, s["markets"].get(base, {}), unit)
     if mn:
@@ -283,7 +315,7 @@ def build(today_ymd, today, prev, history):
 
         total = sum(v["kg"] for v in s["grades"].values()) or 1
         lad = sorted(s["grades"].items(), key=lambda kv: (_grade_rank(kv[0]), -kv[1]["kg"]))
-        lad = [kv for kv in lad if kv[1]["kg"] / total >= 0.005 or kv[0] == base][:5]
+        lad = [kv for kv in lad if kv[1]["kg"] / total >= 0.03 or kv[0] == base][:5]
         ladder = [{"grade": g, "price": v["per_kg"] * unit, "base": g == base, "share": v["kg"] / total,
                    "flag": g in flagged} for g, v in lad]
 

@@ -17,7 +17,7 @@ DATA = Path(__file__).resolve().parent.parent / "data"
 
 SALE_COLUMNS = ",".join([
     "trd_clcln_ymd", "whsl_mrkt_cd", "whsl_mrkt_nm", "gds_mclsf_nm", "gds_sclsf_nm",
-    "unit_qty", "unit_nm", "grd_nm", "unit_tot_qty", "totprc", "avgprc", "lwprc", "hgprc",
+    "unit_qty", "unit_nm", "grd_nm", "sz_nm", "unit_tot_qty", "totprc", "avgprc", "lwprc", "hgprc",
 ])
 
 
@@ -99,16 +99,24 @@ def markets(ymd):
     return result
 
 
+_COLS = [SALE_COLUMNS]
+
+
 def sale_day(ymd, market_list):
-    """하루치 정산 데이터 (전체 시장)."""
+    """하루치 정산 데이터 (전체 시장). 크기(sz_nm) 항목이 거부되면 빼고 다시 받습니다."""
     rows = []
     for m in market_list:
+        params = {"cond[trd_clcln_ymd::EQ]": ymd, "cond[whsl_mrkt_cd::EQ]": m["code"]}
         try:
-            rows.extend(_paged(SALE_URL, {
-                "cond[trd_clcln_ymd::EQ]": ymd,
-                "cond[whsl_mrkt_cd::EQ]": m["code"],
-                "selectable": SALE_COLUMNS,
-            }))
+            rows.extend(_paged(SALE_URL, {**params, "selectable": _COLS[0]}))
         except ApiError as e:
-            print(f"  ! {m['name']} {ymd}: {e}")
+            if "sz_nm" in _COLS[0]:
+                _COLS[0] = _COLS[0].replace(",sz_nm", "")
+                print(f"  (크기 항목 없이 다시 받아요: {e})")
+                try:
+                    rows.extend(_paged(SALE_URL, {**params, "selectable": _COLS[0]}))
+                except ApiError as e2:
+                    print(f"  ! {m['name']} {ymd}: {e2}")
+            else:
+                print(f"  ! {m['name']} {ymd}: {e}")
     return rows

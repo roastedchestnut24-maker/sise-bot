@@ -62,7 +62,7 @@ def spark_svg(c):
 
 
 CSS = """
-body{margin:0;background:#F4F2EC;font-family:'Noto Sans KR',sans-serif;color:#1C1B19}
+body{margin:0;background:#F4F2EC;font-family:'Noto Sans KR',sans-serif;color:#1C1B19;font-size:17px}
 a{color:#2F6B3A}
 .wrap{max-width:760px;margin:0 auto;padding:32px 16px 64px;display:flex;flex-direction:column;gap:16px}
 h1{margin:0;font-size:32px;font-weight:900;line-height:1.25;letter-spacing:-.02em}
@@ -87,12 +87,12 @@ h2{margin:0;font-size:20px;font-weight:900}
 .card{position:relative;isolation:isolate;overflow:hidden;background:#fff;border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:8px}
 .card .art{position:absolute;z-index:-1;right:-18px;top:30px;width:136px;height:136px;opacity:.2;pointer-events:none}
 .tag{align-self:flex-start;font-size:12px;font-weight:500;color:#2F4A28;background:#EEF4EC;border-radius:6px;padding:2px 8px}
-.price{font-size:24px;font-weight:900}
+.price{font-size:26px;font-weight:900}
 .chip{font-size:14px;font-weight:700;border-radius:999px;padding:2px 10px;white-space:nowrap}
 .spark{width:100%;height:44px}
 .nospark{font-size:12px;color:#55524B;height:44px;display:flex;align-items:center}
 .ladder{border-top:1px solid #ECE9E1;padding-top:10px;display:flex;flex-direction:column;gap:5px}
-.lrow{display:grid;grid-template-columns:64px minmax(0,1fr) 72px;align-items:center;gap:8px;font-size:13px}
+.lrow{display:grid;grid-template-columns:64px minmax(0,1fr) 78px;align-items:center;gap:8px;font-size:14px}
 .track{height:10px;background:#F4F2EC;border-radius:5px;overflow:hidden}
 .mrow{display:grid;grid-template-columns:64px minmax(0,1fr) 84px;align-items:center;gap:10px;font-size:15px;font-weight:700}
 .mtrack{height:24px;background:#F4F2EC;border-radius:6px;overflow:hidden}
@@ -118,10 +118,82 @@ details.sec:not([open])>summary::after{content:"펼치기 ▾"}
 details.note>summary{list-style:none;cursor:pointer;font-weight:700;min-height:24px}
 details.note>summary::after{content:" ▾";color:#55524B}
 .card.off{opacity:.7;padding:12px 16px;gap:2px}
+.thin{font-size:11px;font-weight:700;color:#55524B;background:#ECE9E1;border-radius:6px;padding:2px 6px;white-space:nowrap}
+.facts{border-top:1px solid #ECE9E1;padding-top:10px;display:flex;flex-direction:column;gap:6px;font-size:13.5px;line-height:1.5}
+.facts b{font-size:13px}
+.facts .row{display:flex;justify-content:space-between;gap:8px}
+.mine{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
+.mcard{background:#fff;border:2px solid #2F6B3A;border-radius:18px;padding:18px;display:flex;flex-direction:column;gap:8px}
+.mcard .nm{font-size:22px;font-weight:900}
+.mcard .pr{font-size:32px;font-weight:900;line-height:1.1}
+.mcard .best{background:#EEF4EC;border-radius:12px;padding:10px 12px;font-size:16px;line-height:1.55}
+.mcard .org{font-size:15px;line-height:1.55}
+.mcard .opts{display:flex;flex-direction:column;gap:3px;font-size:14px}
+.mcard .opts div{display:flex;justify-content:space-between}
 .ghost{min-height:40px;padding:0 14px;border-radius:999px;border:1px solid #CFCAC0;background:#fff;font:inherit;font-size:13px;font-weight:700;cursor:pointer}
 footer{font-size:13px;line-height:1.7;color:#55524B;padding:8px 4px}
 @media (max-width:480px){h1{font-size:26px}.kpi b{font-size:26px}}
 """
+
+
+def _pct(v):
+    return "–" if v is None else (f"+{v:.0f}%" if v >= 0 else f"{v:.0f}%")
+
+
+def facts_html(c):
+    rows = []
+    if c.get("vol_prev") is not None or c.get("vol_ly") is not None:
+        rows.append(f'<div><b>반입량(전체 등급)</b><br><span class="muted">전 거래일 대비 {_pct(c.get("vol_prev"))} · 작년 같은 요일 대비 {_pct(c.get("vol_ly"))}</span></div>')
+
+    def lst(title, items):
+        if not items:
+            return ""
+        body = " · ".join(f'{e(n)} {won(p)}' for n, p, _ in items)
+        return f'<div><b>{title}</b><br><span class="muted">{body}</span></div>'
+    rows.append(lst("품종별", c.get("vars")))
+    rows.append(lst("물량 많은 법인", c.get("corps")))
+    rows.append(lst("물량 많은 산지", c.get("orgs")))
+    body = "".join(x for x in rows if x)
+    return f'<div class="facts">{body}</div>' if body else ""
+
+
+def mine_section(r):
+    if not r.get("mine") and not r.get("mine_off"):
+        return ""
+    fee = r.get("fee") or 0
+    cost = f"위탁수수료 {fee * 100:g}%" + (" · 운송비" if r.get("has_freight") else "")
+    cards = []
+    for m in r["mine"]:
+        chip_bg = "#FDECEC" if (m["chg"] or 0) > 0 else ("#EAF0FA" if (m["chg"] or 0) < 0 else "#ECE9E1")
+        best = ""
+        if m["best"]:
+            b = m["best"]
+            best = (f'<div class="best">내 시장 중 <b>{e(josa(b["market"], "이", "가"))}</b> 가장 높아요 · {won(b["price"])}<br>'
+                    f'<span class="muted" style="font-size:14px">{e(cost)} 빼면 약 <b>{won(b["net"])}</b> 손에 쥐어요</span></div>')
+        org = ""
+        o = m.get("origin")
+        if o:
+            sign = "+" if o["prem"] >= 0 else ""
+            where = ", ".join(f'{e(x)} {won(p * m["unit_kg"])}' for x, p, _ in o["markets"])
+            org = (f'<div class="org"><b>{e(r.get("my_origin") or "내 산지")}산</b> kg당 {won(o["per_kg"])} · 전국 평균보다 '
+                   f'<b style="color:{UP if o["prem"] >= 0 else DOWN}">{sign}{o["prem"]:.0f}%</b> ({o["kg"] / 1000:.1f}톤)<br>'
+                   f'<span class="muted" style="font-size:14px">{where} ({m["unit_kg"]:g}kg 환산)</span></div>')
+        opts = "".join(f'<div><span>{e(x["market"])}</span><span>{won(x["price"])}</span></div>' for x in m["options"][1:])
+        opts = f'<div class="opts muted">{opts}</div>' if opts else ""
+        thin = '<span class="thin">물량 적음</span>' if m["thin"] else ""
+        warn = '<span class="warn">⚠ 이상거래</span>' if m["notes"] else ""
+        cards.append(
+            f'<div class="mcard"><div style="display:flex;justify-content:space-between;align-items:center;gap:6px">'
+            f'<span class="nm">{e(m["name"])}</span><span style="display:flex;gap:4px">{warn}{thin}</span></div>'
+            f'<div class="tag">기준 {e(m["base"])} · {m["unit_kg"]:g}kg</div>'
+            f'<div style="display:flex;justify-content:space-between;align-items:baseline"><span class="pr">{won(m["price"])}</span>'
+            f'<span class="chip" style="font-size:17px;background:{chip_bg};color:{chg_color(m["chg"])}">{chg_text(m["chg"])}</span></div>'
+            f'{best}{org}{opts}</div>')
+    off = (f'<div class="muted" style="font-size:14px">제철이 아니라 오늘 거래가 없는 내 품목: {e(", ".join(r["mine_off"]))}</div>'
+           if r.get("mine_off") else "")
+    return (f'<section style="display:flex;flex-direction:column;gap:10px"><h2>내 품목</h2>'
+            f'<div class="mine">{"".join(cards)}</div>{off}'
+            f'<div class="muted" style="font-size:13px">손에 쥐는 금액은 경락가에서 {e(cost)}를 뺀 추정이에요. 실제 정산서와 다를 수 있어요.</div></section>')
 
 
 def report_html(r):
@@ -156,8 +228,6 @@ def report_html(r):
     for c in r["cards"]:
         art = f'<img class="art" src="art/{e(c["art"])}.svg" alt="" aria-hidden="true">'
         if c["missing"]:
-            cards.append(f'<article class="card off" data-cat="{e(c["cat"])}"><div style="font-size:15px;font-weight:700">{e(c["name"])}</div>'
-                         f'<div class="muted" style="font-size:13px">거래 없음 · 제철이 아니에요</div></article>')
             continue
         top = max(l["price"] for l in c["ladder"]) or 1
         ladder = "".join(
@@ -169,8 +239,10 @@ def report_html(r):
         hl = ""
         if c["hi"] and c["lo"]:
             hl = (f'<div style="display:flex;flex-direction:column;font-size:12px" class="muted">'
-                  f'<span>최고 {e(c["hi"][0])} {won(c["hi"][1])}</span><span>최저 {e(c["lo"][0])} {won(c["lo"][1])}</span></div>')
-        badge = '<span class="warn">⚠ 이상거래</span>' if c.get("notes") else ""
+                  f'<span>주요 시장 최고 {e(c["hi"][0])} {won(c["hi"][1])}</span><span>주요 시장 최저 {e(c["lo"][0])} {won(c["lo"][1])}</span>'
+                  f'<span style="font-size:11px">주요 시장: 기준 등급 물량 3% 이상인 곳. 기준가는 전체 시장 평균이라 범위를 벗어날 수 있어요</span></div>')
+        badge = ('<span class="warn">⚠ 이상거래</span>' if c.get("notes") else "") + ('<span class="thin">물량 적음</span>' if c.get("thin") else "")
+        facts = facts_html(c)
         cards.append(
             f'<article class="card" data-cat="{e(c["cat"])}">{art}'
             f'<div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px"><div style="font-size:17px;font-weight:900">{e(c["name"])}</div>'
@@ -180,7 +252,7 @@ def report_html(r):
             f'<div class="chip" style="background:{chip_bg};color:{chg_color(c["chg"])}">{chg_text(c["chg"])}</div></div>'
             f'<div class="muted" style="font-size:13px;margin-top:-4px">kg당 {won(c["per_kg"])} · 거래 {c["volume_t"]:.1f}톤</div>'
             f'<details class="more"><summary>{"흐름·등급·이상거래 분석" if c.get("notes") else "흐름·등급별 가격"}</summary>'
-            f'<div class="morebody">{spark_svg(c)}<div class="ladder"><div style="font-size:13px;font-weight:700">등급별 가격</div>{ladder}</div>{alert_html(c)}{hl}</div></details></article>')
+            f'<div class="morebody">{spark_svg(c)}<div class="ladder"><div style="font-size:13px;font-weight:700">등급별 가격</div>{ladder}</div>{facts}{alert_html(c)}{hl}</div></details></article>')
 
     feat = ""
     f = r["featured"]
@@ -210,6 +282,9 @@ def report_html(r):
         f'<button type="button" aria-pressed="false" data-f="{e(cat)}">{e(cat)}</button>'
         for cat in CATS if any(c["cat"] == cat for c in r["cards"]))
     avg_col = chg_color(r["avg"])
+    mine_html = mine_section(r)
+    off_html = (f'<div class="muted" style="font-size:14px;padding:0 4px">제철이 아니라 오늘 거래가 없는 품목: {e(", ".join(r["off"]))}</div>'
+                if r.get("off") else "")
     return f"""<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{e(date_label(r['ymd']))} 농산물 시세</title>{FONT}<style>{CSS}</style></head>
@@ -219,6 +294,7 @@ def report_html(r):
 <h1>{e(date_label(r['ymd']))} 농산물 시세</h1>
 <div class="muted" style="font-size:15px">전국 공영도매시장 정산 가격 · 전 거래일 대비 · {r['item_count']}개 품목 · 품목별 기준 등급으로 비교</div>
 </header>
+{mine_html}
 <section class="dark"><div style="font-size:14px;color:#D6D3CC">오늘 한 줄 요약</div>
 <div style="font-size:20px;font-weight:700;line-height:1.5;margin-top:6px">{e(r['headline'])}</div></section>
 <section class="kpis">
@@ -232,7 +308,7 @@ def report_html(r):
 가격은 포장 단위가 달라도 비교할 수 있게 kg당 가격으로 바꾼 뒤 기준 단위로 환산했어요.
 카드의 ⚠ 표시는 등급 값이 거꾸로 됐거나 하루 25% 넘게 움직인 품목이에요. 카드를 펼치면 이유가 나와요.</div></details>
 <details class="box sec" open><summary><h2>등락률 순위</h2></summary>
-<div class="muted" style="font-size:14px;margin-bottom:10px">가운데 선 오른쪽은 오름, 왼쪽은 내림이에요.</div>
+<div class="muted" style="font-size:14px;margin-bottom:10px">가운데 선 오른쪽은 오름, 왼쪽은 내림이에요. 기준 등급 거래가 1톤 미만인 품목({r.get('thin_count', 0)}개)은 값이 쉽게 튀어서 순위에서 뺐어요.</div>
 {rank_html or '<div class="muted">전일 데이터가 쌓이면 표시돼요.</div>'}
 </details>
 <section style="display:flex;flex-direction:column;gap:12px">
@@ -243,6 +319,7 @@ def report_html(r):
 </div></div>
 <div style="display:flex;justify-content:flex-end;padding:0 4px"><button type="button" id="toggleAll" class="ghost">모두 펼치기</button></div>
 <div class="grid">{''.join(cards)}</div>
+{off_html}
 </section>
 {feat}
 <footer>출처: 한국농수산식품유통공사 전국 공영도매시장 정산정보 (공공데이터포털)<br>
@@ -289,7 +366,16 @@ def card_html(r):
                        f'<b style="text-align:right;color:{col}">{chg_text(c["chg"])}</b></div>')
         return "".join(out) or '<div style="font-size:15px;color:#55524B">해당 품목 없음</div>'
 
-    shown = r.get("by_volume", [c for c in r["cards"] if not c["missing"]])[:24]
+    mine = r.get("mine", [])[:3]
+    shown = r.get("by_volume", [c for c in r["cards"] if not c["missing"]])[:12 if mine else 24]
+    mine_rows = "".join(
+        f'<div style="display:grid;grid-template-columns:150px 1fr auto;align-items:center;gap:12px;padding:8px 0;border-top:{"0" if i == 0 else "1px solid #ECE9E1"}">'
+        f'<div><div style="font-size:26px;font-weight:900;line-height:1.1">{e(m["name"])}</div><div style="font-size:14px;color:#55524B">{e(m["base"])} · {m["unit_kg"]:g}kg</div></div>'
+        f'<div style="font-size:30px;font-weight:900">{won(m["price"])} <span style="font-size:22px;color:{chg_color(m["chg"])}">{chg_text(m["chg"])}</span></div>'
+        f'<div style="text-align:right;font-size:16px;line-height:1.35;color:#2F4A28">{("최고 <b>" + e(m["best"]["market"]) + "</b><br>" + won(m["best"]["price"])) if m["best"] else ""}</div></div>'
+        for i, m in enumerate(mine))
+    mine_box = (f'<div style="background:#fff;border:3px solid #2F6B3A;border-radius:18px;padding:10px 20px">'
+                f'<div style="font-size:16px;font-weight:700;color:#2F6B3A;margin-bottom:2px">내 품목</div>{mine_rows}</div>') if mine else ""
     cols = 6
     tiles = []
     for c in shown:
@@ -308,6 +394,7 @@ def card_html(r):
 <div><div style="font-size:18px;font-weight:700;color:#2F6B3A">오늘의 농산물 시세</div>
 <div style="font-size:46px;font-weight:900;line-height:1.1;letter-spacing:-.02em">{e(date_label(r['ymd'], short=True))}</div></div>
 <div style="text-align:right;font-size:15px;line-height:1.5;color:#55524B">전국 공영도매시장 정산 가격<br>전일 대비 · {r['item_count']}개 품목</div></div>
+{mine_box}
 <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px">
 <div style="background:#fff;border-radius:16px;padding:16px 18px"><div style="font-size:15px;color:#55524B">오른 품목</div>
 <div style="font-size:44px;font-weight:900;line-height:1.1;color:{UP}">{r['up_count']}<span style="font-size:20px">개</span></div></div>
@@ -317,8 +404,8 @@ def card_html(r):
 <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px">
 <div style="background:#fff;border-radius:16px;padding:14px 18px;display:flex;flex-direction:column;gap:8px"><b style="font-size:16px;color:{UP}">상승 TOP 3</b>{rows(r['ups'], UP)}</div>
 <div style="background:#fff;border-radius:16px;padding:14px 18px;display:flex;flex-direction:column;gap:8px"><b style="font-size:16px;color:{DOWN}">하락 TOP 3</b>{rows(r['downs'], DOWN)}</div></div>
-<div style="display:flex;flex-direction:column;gap:8px">
-<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:16px">거래 많은 24개 품목 등락</b>
+<div style="display:{"none" if mine else "flex"};flex-direction:column;gap:8px">
+<div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:16px">거래 많은 {len(shown)}개 품목 등락</b>
 <div style="display:flex;align-items:center;gap:4px;font-size:12px;color:#55524B">크게 내림 {legend} 크게 오름</div></div>
 <div style="display:grid;grid-template-columns:repeat({cols},minmax(0,1fr));gap:6px">{''.join(tiles)}</div></div>
 <div style="margin-top:auto;display:flex;justify-content:space-between;font-size:13px;color:#55524B">

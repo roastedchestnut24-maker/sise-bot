@@ -154,7 +154,7 @@ def mark_sent(day):
 def demo_history():
     """API 없이 화면을 확인하기 위한 예시 데이터 (8일치). 이상거래 예시도 몇 개 섞어 둡니다."""
     rnd = random.Random(7)
-    markets = ["서울가락", "서울강서", "구리", "대구북부", "광주각화", "부산엄궁", "대전오정", "인천삼산"]
+    markets = ["서울가락", "서울강서", "구리", "대구북부", "광주각화", "부산엄궁", "부산반여", "진주"]
     days, out = [], []
     d = date(2026, 11, 26)
     while len(days) < 8:
@@ -166,7 +166,9 @@ def demo_history():
     walk = {k: 1.0 for k in base_price}
 
     def g(pk, kg, n, pack):
-        return {"per_kg": pk, "kg": kg, "n": n, "pack": pack}
+        return {"per_kg": pk, "kg": kg, "n": n, "pack": pack,
+                "corp": [["중앙청과", round(pk * 1.03), round(kg * .4)], ["동화청과", round(pk), round(kg * .3)], ["한국청과", round(pk * .96), round(kg * .2)]],
+                "org": [["경남 하동군", round(pk * 1.08), round(kg * .3)], ["전남 광양시", round(pk), round(kg * .25)], ["전남 순천시", round(pk * .95), round(kg * .2)]]}
 
     for i, day in enumerate(days):
         last = i == len(days) - 1
@@ -202,6 +204,9 @@ def demo_history():
                 mk["특"]["광주각화"]["per_kg"] *= 2.2
                 mk["특"]["광주각화"]["n"] = 2
             s[n] = {"pack": pack, "grades": grades, "markets": mk}
+            if n in ("밤", "건고사리", "생고사리", "곶감", "대봉감"):
+                s[n]["mine"] = {"all": {"per_kg": pk * 1.07, "kg": 3000 * vol},
+                                "m": {"부산반여": {"per_kg": pk * 1.15, "kg": 1200}, "대구북부": {"per_kg": pk * 1.02, "kg": 900}}}
             s["_kg"] += sum(v["kg"] for v in grades.values())
         out.append((ymd(day), s))
     return out
@@ -223,15 +228,30 @@ def build(demo=False, day=None):
         sys.exit("최근 2주 동안 정산 데이터를 찾지 못했어요. 정산정보 API 활용신청이 승인됐는지, 인증키(Decoding)가 맞는지 확인해 주세요.")
     today_ymd, today = hist[-1]
     prev = hist[-2][1] if len(hist) > 1 else None
-    report = analyze.build(today_ymd, today, prev, hist)
+    last_year = None
+    if not demo:
+        # 1년 전 같은 요일(364일 전)의 반입량과 비교
+        ly_day = datetime.strptime(today_ymd, "%Y-%m-%d").date() - timedelta(days=364)
+        try:
+            last_year = fetch_day(ymd(ly_day), markets)
+        except Exception as e:  # 작년 자료가 없어도 보고서는 만듭니다
+            print(f"  (작년 비교 자료 없음: {e})")
+    report = analyze.build(today_ymd, today, prev, hist, last_year)
     png = render.write_all(report, png=True)
     urls = render.public_urls(report)
     ups = [f"{c['name']} {render.chg_text(c['chg'])}" for c in report["ups"][:2]]
     downs = [f"{c['name']} {render.chg_text(c['chg'])}" for c in report["downs"][:1]]
+    mine_lines = []
+    for m in report["mine"][:3]:
+        line = f"{m['name']} {render.won(m['price'])}({m['unit_kg']:g}kg) {render.chg_text(m['chg'])}"
+        if m["best"]:
+            line += f" · {m['best']['market']} 최고"
+        mine_lines.append(line)
     latest = {
         "ymd": today_ymd,
         "title": f"{render.date_label(today_ymd)} 농산물 시세",
-        "description": f"오른 품목 {report['up_count']} · 내린 품목 {report['down_count']}\n"
+        "description": ("\n".join(mine_lines) + "\n" if mine_lines else "")
+                       + f"오른 품목 {report['up_count']} · 내린 품목 {report['down_count']}\n"
                        + ", ".join(ups + downs)
                        + (f"\n⚠ 이상거래 {len(report['flagged'])}건 분석" if report.get("flagged") else ""),
         "card_url": urls["card"],

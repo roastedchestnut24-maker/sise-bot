@@ -11,11 +11,11 @@ import re
 from collections import defaultdict
 from statistics import median
 
-from .config import ITEMS, GRADE_ORDER, FEATURED, NO_GRADE, CATS
+from .config import ITEMS, GRADE_ORDER, FEATURED, NO_GRADE, CATS, MY, THIN_KG
 
 # 품목 목록이 바뀌면 저장해 둔 요약을 다시 받도록 표시하는 값
 SIG = hashlib.md5(json.dumps([[i["name"], i["mid"], i.get("small"), i.get("exclude")] for i in ITEMS],
-                             ensure_ascii=False).encode()).hexdigest()[:10] + "-v3"
+                             ensure_ascii=False).encode()).hexdigest()[:10] + "-v4"
 
 
 def _num(v):
@@ -52,10 +52,12 @@ def catalog(rows):
 
 
 def _new():
-    return {"won": 0.0, "kg": 0.0, "n": 0, "pack": defaultdict(float), "var": defaultdict(float), "size": defaultdict(float)}
+    return {"won": 0.0, "kg": 0.0, "n": 0, "pack": defaultdict(float), "var": defaultdict(float), "size": defaultdict(float),
+            "by": {"vars": defaultdict(lambda: [0.0, 0.0]), "corp": defaultdict(lambda: [0.0, 0.0]),
+                   "org": defaultdict(lambda: [0.0, 0.0])}}
 
 
-def _add(a, won, kg, pack, var=None, size=None):
+def _add(a, won, kg, pack, var=None, size=None, corp=None, org=None):
     a["won"] += won
     a["kg"] += kg
     a["n"] += 1
@@ -65,6 +67,29 @@ def _add(a, won, kg, pack, var=None, size=None):
         a["var"][var] += kg
     if size:
         a["size"][size] += kg
+    for key, v in (("vars", var), ("corp", corp), ("org", org)):
+        if v:
+            a["by"][key][v][0] += won
+            a["by"][key][v][1] += kg
+
+
+SIDO = {"전남광주통합특별시": "전남", "전라남도": "전남", "경상남도": "경남", "경상북도": "경북", "전라북도": "전북",
+        "전북특별자치도": "전북", "충청북도": "충북", "충청남도": "충남", "강원특별자치도": "강원", "강원도": "강원",
+        "경기도": "경기", "제주특별자치도": "제주", "세종특별자치시": "세종"}
+
+
+def origin_name(raw):
+    """출하자 주소 → '시도 시군' (예: '경상남도 하동군 악양면' → '경남 하동군')."""
+    o = re.sub(r"\s+", " ", raw or "").strip()
+    for k, v in SIDO.items():
+        o = o.replace(k, v)
+    p = o.split(" ")
+    return " ".join(p[:2]) if len(p) >= 2 and p[1] else ""
+
+
+def _top(d, n=5):
+    rows = [[k, round(w / kg), round(kg)] for k, (w, kg) in d.items() if kg > 0]
+    return sorted(rows, key=lambda x: -x[2])[:n]
 
 
 def _top(d, total):
@@ -79,6 +104,9 @@ def _fin(a, detail=False):
     if a["pack"]:
         out["pack"] = float(max(a["pack"].items(), key=lambda kv: kv[1])[0])
     if detail:
+        for key in ("vars", "corp", "org"):
+            if a["by"][key]:
+                out[key] = _top(a["by"][key])
         if a["var"]:
             out["var"] = _top(a["var"], a["kg"])
         if a["size"]:
@@ -88,7 +116,9 @@ def _fin(a, detail=False):
 
 def summarize(rows):
     """하루치 원자료 → 품목별 {등급: kg당 가격·물량·건수·주 포장}, {등급: {시장: …}}"""
-    acc = {i["name"]: {"g": defaultdict(_new), "m": defaultdict(lambda: defaultdict(_new)), "all": _new()} for i in ITEMS}
+    acc = {i["name"]: {"g": defaultdict(_new), "m": defaultdict(lambda: defaultdict(_new)), "all": _new(),
+                       "mine": _new(), "mine_m": defaultdict(_new)} for i in ITEMS}
+    mine_key = MY.get("origin") or ""
     markets = set()
     for r in rows:
         if str(r.get("unit_nm") or "").strip().lower() != "kg":
@@ -103,14 +133,19 @@ def summarize(rows):
         size = (r.get("sz_nm") or "").strip()
         if not re.search(r"[0-9A-Za-z가-힣]", size) or size in ("기타", "없음", "무"):
             size = ""
+        corp = (r.get("corp_nm") or "").strip()
+        org = origin_name(r.get("plor_nm"))
         market = (r.get("whsl_mrkt_nm") or "?").replace("도매시장", "").replace("농수산물", "").replace("공판장", "").strip() or "?"
         markets.add(market)
         for item in ITEMS:
             if _match(item, r):
                 a = acc[item["name"]]
-                _add(a["g"][grade], won, kg, pack, var, size)
+                _add(a["g"][grade], won, kg, pack, var, size, corp, org)
                 _add(a["m"][grade][market], won, kg, pack)
                 _add(a["all"], won, kg, pack)
+                if mine_key and mine_key in (r.get("plor_nm") or ""):
+                    _add(a["mine"], won, kg, pack)
+                    _add(a["mine_m"][market], won, kg, pack)
                 break
     out = {"_sig": SIG, "_markets": len(markets),
            "_kg": sum(a["all"]["kg"] for a in acc.values())}
@@ -122,6 +157,8 @@ def summarize(rows):
             "grades": {g: _fin(v, detail=True) for g, v in a["g"].items() if v["kg"] > 0},
             "markets": {g: {m: _fin(v) for m, v in mk.items() if v["kg"] > 0} for g, mk in a["m"].items()},
         }
+        if a["mine"]["kg"] > 0:
+            out[name]["mine"] = {"all": _fin(a["mine"]), "m": {m: _fin(v) for m, v in a["mine_m"].items() if v["kg"] > 0}}
     return out
 
 
@@ -287,10 +324,11 @@ def anomalies(item, base, s, prev_s, chg, unit):
 
 # ── 보고서 값 만들기 ─────────────────────────────────────────────
 
-def build(today_ymd, today, prev, history):
+def build(today_ymd, today, prev, history, last_year=None):
     """보고서에 넣을 값 만들기.
 
     today/prev: summarize() 결과. history: [(ymd, summary), ...] 오래된 날부터, 오늘 포함.
+    last_year: 1년 전 같은 요일의 summarize() 결과 (반입량 비교용, 없으면 None).
     """
     cards = []
     for item in ITEMS:
@@ -302,6 +340,8 @@ def build(today_ymd, today, prev, history):
         unit = item.get("unit_kg") or s["grades"][base].get("pack") or s.get("pack") or 1
         per_kg = s["grades"][base]["per_kg"]
         price = per_kg * unit
+        base_kg = s["grades"][base]["kg"]
+        thin = base_kg < THIN_KG
 
         chg = None
         ps = prev.get(item["name"]) if prev else None
@@ -310,20 +350,44 @@ def build(today_ymd, today, prev, history):
             if p > 0:
                 chg = (per_kg / p - 1) * 100
 
-        notes = anomalies(item, base, s, ps, chg, unit)
-        flagged = {g for n in notes if n["kind"] in ("역전", "미표기") for g in n["grades"][-1:]}
-
-        total = sum(v["kg"] for v in s["grades"].values()) or 1
-        lad = sorted(s["grades"].items(), key=lambda kv: (_grade_rank(kv[0]), -kv[1]["kg"]))
-        lad = [kv for kv in lad if kv[1]["kg"] / total >= 0.03 or kv[0] == base][:5]
-        ladder = [{"grade": g, "price": v["per_kg"] * unit, "base": g == base, "share": v["kg"] / total,
-                   "flag": g in flagged} for g, v in lad]
-
         spark = []
         for ymd, hs in history:
             v = hs.get(item["name"], {}).get("grades", {}).get(base)
             if v:
                 spark.append((ymd, v["per_kg"] * unit))
+
+        notes = anomalies(item, base, s, ps, chg, unit)
+        # 최근 거래일들의 평소 값과 크게 다르면 원자료 확인 필요
+        past = [p for d, p in spark[:-1]]
+        if len(past) >= 3:
+            med = median(past)
+            ratio = price / med if med else 1
+            if ratio < 0.6 or ratio > 1.6:
+                g = s["grades"][base]
+                notes.append({"kind": "확인", "grades": [base],
+                              "title": f"최근 거래일 평소 값의 {ratio * 100:.0f}% 수준이에요",
+                              "why": [f"최근 {len(past)}거래일 가운데값은 {med:,.0f}원인데 오늘은 {price:,.0f}원이에요(거래 {g['n']}건·{_t(g['kg'])}). "
+                                      "품종·포장이 다른 물건이 섞였거나 원자료 분류가 잘못됐을 수 있어 값을 그대로 믿기 전에 확인이 필요해요"]})
+        flagged = {g for n in notes if n["kind"] in ("역전", "미표기") for g in n["grades"][-1:]}
+
+        total = sum(v["kg"] for v in s["grades"].values()) or 1
+        lad = sorted(s["grades"].items(), key=lambda kv: (_grade_rank(kv[0]), -kv[1]["kg"]))
+
+        def keep(g, v):
+            if g == base:
+                return True
+            share = v["kg"] / total
+            if share < 0.03:
+                return False
+            if g == NO_GRADE and share < 0.10:
+                return False          # 등급 없이 거래된 소량은 등급표에서 뺌
+            r = v["per_kg"] / per_kg if per_kg else 1
+            if v["n"] <= 2 and (r > 2 or r < 0.5):
+                return False          # 한두 건짜리 극단값
+            return True
+        lad = [kv for kv in lad if keep(*kv)][:5]
+        ladder = [{"grade": g, "price": v["per_kg"] * unit, "base": g == base, "share": v["kg"] / total,
+                   "flag": g in flagged} for g, v in lad]
 
         mk = s["markets"].get(base, {})
         mt = sum(v["kg"] for v in mk.values()) or 1
@@ -333,6 +397,15 @@ def build(today_ymd, today, prev, history):
         hi = main_mk[0] if main_mk else None
         lo = main_mk[-1] if len(main_mk) > 1 else None
 
+        # 반입량: 이 품목 전체 물량의 전 거래일·작년 같은 요일 대비
+        def vol(sm):
+            it = (sm or {}).get(item["name"])
+            return sum(v["kg"] for v in it["grades"].values()) if it else None
+        pv, lv = vol(prev), vol(last_year)
+        vol_prev = (total / pv - 1) * 100 if pv else None
+        vol_ly = (total / lv - 1) * 100 if lv else None
+
+        gb = s["grades"][base]
         cards.append({
             **item,
             "unit_kg": unit,
@@ -341,20 +414,27 @@ def build(today_ymd, today, prev, history):
             "price": price,
             "per_kg": per_kg,
             "chg": chg,
-            "volume_t": s["grades"][base]["kg"] / 1000,
+            "thin": thin,
+            "volume_t": base_kg / 1000,
             "total_t": total / 1000,
+            "vol_prev": vol_prev,
+            "vol_ly": vol_ly,
             "ladder": ladder,
             "spark": spark,
             "markets": main_mk,
             "hi": hi,
             "lo": lo,
+            "vars": [[n, p * unit, kg] for n, p, kg in gb.get("vars", [])][:3] if len(gb.get("vars", [])) > 1 else [],
+            "corps": [[n, p * unit, kg] for n, p, kg in gb.get("corp", [])][:3],
+            "orgs": [[n, p * unit, kg] for n, p, kg in gb.get("org", [])][:3],
             "notes": notes,
+            "_s": s,
         })
 
     # 같은 분류 안에서 거래량 많은 순
     cards.sort(key=lambda c: (CATS.index(c["cat"]) if c["cat"] in CATS else 99, c["missing"], -c.get("total_t", 0)))
 
-    priced = [c for c in cards if not c["missing"] and c["chg"] is not None]
+    priced = [c for c in cards if not c["missing"] and c["chg"] is not None and not c["thin"]]
     ups = sorted([c for c in priced if c["chg"] > 0], key=lambda c: -c["chg"])
     downs = sorted([c for c in priced if c["chg"] < 0], key=lambda c: c["chg"])
     flat = [c for c in priced if c["chg"] == 0]
@@ -368,6 +448,41 @@ def build(today_ymd, today, prev, history):
         names = "·".join(c["name"] for c in downs[:2])
         parts.append(f"{josa(names, '은', '는')} 내림세예요")
     headline = ". ".join(parts) + "." if parts else "전일과 비교할 데이터가 아직 없어요. 내일부터 등락이 표시돼요."
+
+    # ── 내 품목 ──
+    by_name = {c["name"]: c for c in cards}
+    fee = MY.get("commission") or 0
+    freight = MY.get("freight") or {}
+    mine, mine_off = [], []
+    for name in MY.get("items", []):
+        c = by_name.get(name)
+        if not c or c["missing"]:
+            mine_off.append(name)
+            continue
+        s_ = c["_s"]
+        mk = s_["markets"].get(c["base"], {})
+        opts = []
+        for m in MY.get("markets", []):
+            v = mk.get(m)
+            if not v:
+                continue
+            net_kg = v["per_kg"] * (1 - fee) - (freight.get(m) or 0)
+            opts.append({"market": m, "price": v["per_kg"] * c["unit_kg"], "net": net_kg * c["unit_kg"],
+                         "kg": v["kg"], "freight": m in freight})
+        opts.sort(key=lambda o: -o["net"])
+        all_w = sum(v["per_kg"] * v["kg"] for v in s_["grades"].values())
+        all_kg = sum(v["kg"] for v in s_["grades"].values()) or 1
+        nat = all_w / all_kg
+        mo = s_.get("mine")
+        origin = None
+        if mo:
+            mp = mo["all"]["per_kg"]
+            top_m = sorted(mo["m"].items(), key=lambda kv: -kv[1]["kg"])[:3]
+            origin = {"per_kg": mp, "kg": mo["all"]["kg"], "prem": (mp / nat - 1) * 100,
+                      "markets": [[m, v["per_kg"], v["kg"]] for m, v in top_m]}
+        mine.append({"name": name, "base": c["base"], "unit_kg": c["unit_kg"], "price": c["price"], "per_kg": c["per_kg"],
+                     "chg": c["chg"], "thin": c["thin"], "best": opts[0] if opts else None, "options": opts,
+                     "origin": origin, "notes": c["notes"]})
 
     featured = next((c for c in cards if c["name"] == FEATURED and not c["missing"]), None)
     flagged = [c for c in cards if not c["missing"] and c["notes"]]
@@ -388,5 +503,12 @@ def build(today_ymd, today, prev, history):
         "flagged": flagged,
         "by_volume": big,
         "item_count": len([c for c in cards if not c["missing"]]),
+        "mine": mine,
+        "mine_off": mine_off,
+        "my_origin": MY.get("origin"),
+        "fee": fee,
+        "has_freight": bool(freight),
+        "off": [c["name"] for c in cards if c["missing"]],
+        "thin_count": len([c for c in cards if not c["missing"] and c["thin"]]),
         "markets": today.get("_markets"),
     }

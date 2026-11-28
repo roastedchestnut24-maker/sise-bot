@@ -50,7 +50,7 @@ jobs:
           git config user.name "sise-bot"
           git config user.email "sise-bot@users.noreply.github.com"
           git add data/history data/timing.csv 2>/dev/null || true
-          git diff --cached --quiet || (git commit -m "정산 확인 기록" && git push)
+          git diff --cached --quiet || (git commit -m "정산 확인 기록" && git pull --rebase && git push)
 
       - name: 카드 그리기 준비
         if: steps.check.outputs.go == 'true'
@@ -69,7 +69,7 @@ jobs:
           git config user.email "sise-bot@users.noreply.github.com"
           git add docs data
           git commit -m "시세 보고서 ${{ steps.check.outputs.day }}" || echo "바뀐 내용 없음"
-          git push
+          git pull --rebase && git push
 
       - name: 카톡 보내기
         if: steps.check.outputs.go == 'true'
@@ -82,7 +82,7 @@ jobs:
           python -m sise.run sent ${{ steps.check.outputs.day }}
           git add data/sent.json
           git commit -m "보냄 ${{ steps.check.outputs.day }}"
-          git push
+          git pull --rebase && git push
 
       - name: 카카오 토큰 갱신 저장
         if: always() && steps.check.outputs.go == 'true'

@@ -1,0 +1,72 @@
+name: 오늘 경매 속보
+
+# 실시간 경매정보로 '내 품목'의 오늘 낙찰가(등급 무관 kg당 평균)를 아침 10시쯤 카톡으로 보냅니다.
+# 등급별 정확한 시세는 다음 날 아침 정식 보고서로 옵니다.
+on:
+  schedule:
+    - cron: "0 1 * * *"   # 한국 시간 10:00 (GitHub 사정으로 몇 분~수십 분 늦을 수 있어요)
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "오늘 이미 보냈어도 다시 보내기"
+        type: boolean
+        default: false
+      date:
+        description: "특정 날짜로 만들기 (예: 2026-11-27, 비워 두면 오늘)"
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency: flash-report
+
+jobs:
+  flash:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install requests
+
+      - name: 오늘 경매 자료 받기
+        env:
+          DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
+          DAY: ${{ inputs.date }}
+        run: python -m sise.flash build ${DAY:+--date "$DAY"}
+
+      - name: 속보 페이지 올리기
+        run: |
+          git config user.name "sise-bot"
+          git config user.email "sise-bot@users.noreply.github.com"
+          git add docs/flash.html docs/flash.json 2>/dev/null || true
+          git commit -m "경매 속보" || echo "바뀐 내용 없음"
+          git pull --rebase && git push
+
+      - name: 카톡 보내기
+        env:
+          KAKAO_REST_KEY: ${{ secrets.KAKAO_REST_KEY }}
+          KAKAO_CLIENT_SECRET: ${{ secrets.KAKAO_CLIENT_SECRET }}
+          KAKAO_REFRESH_TOKEN: ${{ secrets.KAKAO_REFRESH_TOKEN }}
+          FORCE: ${{ inputs.force && '--force' || '' }}
+        run: |
+          sleep 60   # GitHub Pages 에 새 페이지가 올라갈 시간
+          python -m sise.flash send $FORCE
+          git add data/flash_sent.json 2>/dev/null || true
+          git commit -m "속보 보냄" || true
+          git pull --rebase && git push
+
+      - name: 카카오 토큰 갱신 저장
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          if [ -f .new_refresh_token ]; then
+            gh secret set KAKAO_REFRESH_TOKEN < .new_refresh_token
+            rm -f .new_refresh_token
+            echo "카카오 토큰을 새로 저장했어요."
+          fi

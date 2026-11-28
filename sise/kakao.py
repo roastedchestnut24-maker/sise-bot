@@ -64,6 +64,17 @@ def access_token():
     return body["access_token"]
 
 
+def send_text(text, url, button="자세히 보기"):
+    link = {"web_url": url, "mobile_web_url": url}
+    template = {"object_type": "text", "text": text[:200], "link": link, "button_title": button}
+    r = requests.post(MEMO_URL, headers={"Authorization": f"Bearer {access_token()}"},
+                      data={"template_object": json.dumps(template, ensure_ascii=False)}, timeout=20)
+    body = r.json()
+    if body.get("result_code") != 0:
+        raise RuntimeError(f"카톡 발송 실패: {body}")
+    print("카톡을 보냈어요.")
+
+
 def send_report(summary, card_url, report_url, image_ok=True):
     link = {"web_url": report_url, "mobile_web_url": report_url}
     if image_ok:

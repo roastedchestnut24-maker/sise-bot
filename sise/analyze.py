@@ -92,7 +92,7 @@ def _top(d, n=5):
     return sorted(rows, key=lambda x: -x[2])[:n]
 
 
-def _top(d, total):
+def _share(d, total):
     if not d:
         return None
     k, v = max(d.items(), key=lambda kv: kv[1])
@@ -108,9 +108,9 @@ def _fin(a, detail=False):
             if a["by"][key]:
                 out[key] = _top(a["by"][key])
         if a["var"]:
-            out["var"] = _top(a["var"], a["kg"])
+            out["var"] = _share(a["var"], a["kg"])
         if a["size"]:
-            out["size"] = _top(a["size"], a["kg"])
+            out["size"] = _share(a["size"], a["kg"])
     return out
 
 

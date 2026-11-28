@@ -1,0 +1,22 @@
+name: 실시간 경매 항목 확인
+
+on:
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "조회일 (비우면 오늘)"
+        default: ""
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: 실시간 경매정보 항목 보기
+        env:
+          DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
+        run: python -m sise.probe ${{ inputs.date }}
